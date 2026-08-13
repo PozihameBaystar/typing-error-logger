@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Typing Error Logger</title>
+<style>
+  :root { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color-scheme: light dark; }
+  body { max-width: 1000px; margin: 28px auto; padding: 0 18px 60px; }
+  h1 { margin-bottom: .25rem; }
+  .muted { opacity: .72; }
+  .card { border: 1px solid #8886; border-radius: 12px; padding: 16px; margin: 14px 0; }
+  textarea { width: 100%; min-height: 160px; box-sizing: border-box; font-family: ui-monospace, monospace; }
+  button { padding: 9px 14px; margin: 4px 4px 4px 0; cursor: pointer; }
+  #jp { font-size: 28px; font-weight: 650; margin-top: 8px; }
+  #target { font-family: ui-monospace, monospace; font-size: 30px; letter-spacing: .04em; overflow-wrap: anywhere; }
+  #typed { font-family: ui-monospace, monospace; font-size: 26px; min-height: 1.5em; overflow-wrap: anywhere; }
+  .done { opacity: .45; }
+  .current { text-decoration: underline; font-weight: 800; }
+  .wrongflash { animation: flash .18s linear 1; }
+  @keyframes flash { from { background: rgba(255,0,0,.38); } to { background: transparent; } }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit,minmax(150px,1fr)); gap: 10px; }
+  .stat { border: 1px solid #8885; border-radius: 8px; padding: 10px; }
+  .big { font-size: 1.35rem; font-weight: 700; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { border-bottom: 1px solid #8885; padding: 7px 8px; text-align: left; }
+  code { font-family: ui-monospace, monospace; }
+  #practice { outline: none; }
+</style>
+</head>
+<body>
+<h1>Typing Error Logger</h1>
+<p class="muted">ローカルで動作する、キー単位のタイピング記録ツールです。入力内容は外部送信しません。</p>
+
+<div class="card">
+  <h2>1. 練習文</h2>
+  <p>1行を <code>表示文|入力するローマ字</code> の形式で書いてください。<code>|</code> が無い行は、その行自体を入力対象にします。</p>
+  <textarea id="prompts">おはようございます|ohayougozaimasu
+タイピングを練習する|taipinguworenshuusuru
+正しい指で入力する|tadashiiyubidenyuuryokusuru
+速度より正確さを優先する|sokudoyoriseikakusawoyu先sする</textarea>
+  <p class="muted">※上の4行目は例として編集してください。開始前なら自由に差し替えられます。</p>
+  <button id="startBtn">新しいセッションを開始</button>
+</div>
+
+<div class="card" id="practice" tabindex="0">
+  <h2>2. タイピング</h2>
+  <div id="jp">開始ボタンを押してください</div>
+  <div id="target"></div>
+  <div id="typed"></div>
+  <p class="muted">この枠をクリックしてから入力。誤入力では位置を進めず、正しいキーが押されるまで待ちます。Backspaceなどもイベントとして保存します。</p>
+</div>
+
+<div class="card">
+  <h2>3. 現在の集計</h2>
+  <div class="stats">
+    <div class="stat"><div class="muted">正打鍵</div><div class="big" id="correctN">0</div></div>
+    <div class="stat"><div class="muted">誤打鍵</div><div class="big" id="errorN">0</div></div>
+    <div class="stat"><div class="muted">正確率</div><div class="big" id="accuracy">—</div></div>
+    <div class="stat"><div class="muted">平均正打鍵間隔</div><div class="big" id="meanInterval">—</div></div>
+    <div class="stat"><div class="muted">経過時間</div><div class="big" id="elapsed">—</div></div>
+  </div>
+  <h3>間違えやすいキー</h3>
+  <table>
+    <thead><tr><th>期待キー</th><th>誤打鍵数</th><th>代表的な実入力</th></tr></thead>
+    <tbody id="errorTable"></tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>4. 保存</h2>
+  <button id="jsonBtn">JSONを書き出す</button>
+  <button id="csvBtn">CSVを書き出す</button>
+  <button id="clearBtn">現在のログを消去</button>
+  <p class="muted">分析用にはJSON推奨です。このJSONをChatGPTに渡せば、キー別・指別・文字遷移別・時間変化まで解析できます。</p>
+</div>
+
+<script>
+"use strict";
+
+const DEFAULT_PROMPTS = [
+  ["おはようございます", "ohayougozaimasu"],
+  ["タイピングを練習する", "taipinguworenshuusuru"],
+  ["正しい指で入力する", "tadashiiyubidenyuuryokusuru"],
+  ["速度より正確さを優先する", "sokudoyoriseikakusawoyuusensuru"],
+  ["ホームポジションを意識する", "hoomupojishonwoishikisuru"],
+  ["落ち着いて入力する", "ochitsuiteyuuryokusuru"]
+];
+
+const fingerMap = {
+  q:"L-pinky", a:"L-pinky", z:"L-pinky",
+  w:"L-ring", s:"L-ring", x:"L-ring",
+  e:"L-middle", d:"L-middle", c:"L-middle",
+  r:"L-index", f:"L-index", v:"L-index", t:"L-index", g:"L-index", b:"L-index",
+  y:"R-index", h:"R-index", n:"R-index", u:"R-index", j:"R-index", m:"R-index",
+  i:"R-middle", k:"R-middle", ",":"R-middle",
+  o:"R-ring", l:"R-ring", ".":"R-ring",
+  p:"R-pinky", ";":"R-pinky", "/":"R-pinky"
+};
+
+const handOf = k => {
+  const f = fingerMap[k?.toLowerCase()];
+  if (!f) return null;
+  return f.startsWith("L-") ? "left" : "right";
+};
+
+let prompts = [];
+let pIndex = 0;
+let pos = 0;
+let active = false;
+let sessionStart = null;
+let promptStart = null;
+let lastKeyTs = null;
+let lastCorrectTs = null;
+let events = [];
+let correctIntervals = [];
+let timerId = null;
+
+const $ = id => document.getElementById(id);
+
+function parsePrompts() {
+  const raw = $("prompts").value.trim();
+  const lines = raw.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  const parsed = [];
+  for (const line of lines) {
+    const idx = line.indexOf("|");
+    if (idx >= 0) {
+      const jp = line.slice(0, idx).trim();
+      const target = line.slice(idx + 1).trim().toLowerCase();
+      if (target) parsed.push([jp || target, target]);
+    } else {
+      parsed.push([line, line.toLowerCase()]);
+    }
+  }
+  return parsed.length ? parsed : DEFAULT_PROMPTS;
+}
+
+function now() { return performance.now(); }
+
+function startSession() {
+  prompts = parsePrompts();
+  pIndex = 0;
+  pos = 0;
+  active = true;
+  events = [];
+  correctIntervals = [];
+  sessionStart = now();
+  promptStart = sessionStart;
+  lastKeyTs = null;
+  lastCorrectTs = null;
+  renderPrompt();
+  updateStats();
+  $("practice").focus();
+
+  clearInterval(timerId);
+  timerId = setInterval(updateStats, 250);
+}
+
+function renderPrompt() {
+  if (!active || pIndex >= prompts.length) {
+    active = false;
+    $("jp").textContent = "セッション完了";
+    $("target").textContent = "";
+    $("typed").textContent = "";
+    updateStats();
+    return;
+  }
+
+  const [label, target] = prompts[pIndex];
+  $("jp").textContent = `${pIndex + 1}/${prompts.length}  ${label}`;
+
+  const before = escapeHtml(target.slice(0, pos));
+  const current = target[pos] ? escapeHtml(target[pos]) : "";
+  const after = escapeHtml(target.slice(pos + 1));
+  $("target").innerHTML =
+    `<span class="done">${before}</span>` +
+    (current ? `<span class="current">${current}</span>` : "") +
+    `${after}`;
+
+  $("typed").textContent = target.slice(0, pos);
+}
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, ch => ({
+    "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#039;"
+  }[ch]));
+}
+
+function recordKey(e) {
+  if (!active) return;
+
+  const t = now();
+  const [label, target] = prompts[pIndex];
+  const expected = target[pos] ?? null;
+
+  let actual = e.key;
+  if (actual.length === 1) actual = actual.toLowerCase();
+
+  // Ctrl/Alt/Metaショートカットは操作ミスとして数えず無視
+  if (e.ctrlKey || e.altKey || e.metaKey) return;
+
+  // ブラウザ側のSpaceスクロール等を抑止
+  if ([" ", "Backspace", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
+    e.preventDefault();
+  }
+
+  const isPrintable = actual.length === 1;
+  const correct = isPrintable && actual === expected;
+
+  const event = {
+    session_time_ms: +(t - sessionStart).toFixed(3),
+    prompt_index: pIndex,
+    prompt_label: label,
+    target,
+    position_before: pos,
+    expected_key: expected,
+    actual_key: actual,
+    correct,
+    interval_from_prev_key_ms: lastKeyTs == null ? null : +(t - lastKeyTs).toFixed(3),
+    interval_from_prev_correct_ms: lastCorrectTs == null ? null : +(t - lastCorrectTs).toFixed(3),
+    prompt_elapsed_ms: +(t - promptStart).toFixed(3),
+    expected_finger: expected ? (fingerMap[expected] ?? null) : null,
+    actual_finger: isPrintable ? (fingerMap[actual] ?? null) : null,
+    expected_hand: expected ? handOf(expected) : null,
+    actual_hand: isPrintable ? handOf(actual) : null,
+    code: e.code,
+    repeat: e.repeat
+  };
+  events.push(event);
+  lastKeyTs = t;
+
+  if (correct) {
+    if (lastCorrectTs != null) correctIntervals.push(t - lastCorrectTs);
+    lastCorrectTs = t;
+    pos++;
+
+    if (pos >= target.length) {
+      pIndex++;
+      pos = 0;
+      promptStart = t;
+      lastCorrectTs = null;
+    }
+    renderPrompt();
+  } else if (isPrintable) {
+    const box = $("practice");
+    box.classList.remove("wrongflash");
+    void box.offsetWidth;
+    box.classList.add("wrongflash");
+  }
+
+  updateStats();
+}
+
+function updateStats() {
+  const correctN = events.filter(x => x.correct).length;
+  const errorEvents = events.filter(x => !x.correct && x.actual_key?.length === 1);
+  const errorN = errorEvents.length;
+  const denom = correctN + errorN;
+
+  $("correctN").textContent = correctN;
+  $("errorN").textContent = errorN;
+  $("accuracy").textContent = denom ? `${(100 * correctN / denom).toFixed(2)}%` : "—";
+
+  const validIntervals = correctIntervals.filter(x => Number.isFinite(x));
+  const mean = validIntervals.length
+    ? validIntervals.reduce((a,b)=>a+b,0) / validIntervals.length
+    : null;
+  $("meanInterval").textContent = mean == null ? "—" : `${mean.toFixed(1)} ms`;
+
+  const elapsedMs = sessionStart == null ? 0 : ((active ? now() : (events.at(-1)?.session_time_ms ?? 0)));
+  $("elapsed").textContent = sessionStart == null ? "—" : `${(elapsedMs/1000).toFixed(1)} s`;
+
+  const grouped = {};
+  for (const ev of errorEvents) {
+    const k = ev.expected_key ?? "(none)";
+    grouped[k] ??= { n: 0, actual: {} };
+    grouped[k].n++;
+    grouped[k].actual[ev.actual_key] = (grouped[k].actual[ev.actual_key] || 0) + 1;
+  }
+
+  const rows = Object.entries(grouped)
+    .sort((a,b) => b[1].n - a[1].n)
+    .slice(0, 15)
+    .map(([expected, info]) => {
+      const actuals = Object.entries(info.actual)
+        .sort((a,b)=>b[1]-a[1])
+        .slice(0,5)
+        .map(([k,n])=>`${escapeHtml(k)} (${n})`).join(", ");
+      return `<tr><td><code>${escapeHtml(expected)}</code></td><td>${info.n}</td><td>${actuals}</td></tr>`;
+    }).join("");
+  $("errorTable").innerHTML = rows || `<tr><td colspan="3" class="muted">まだ誤入力はありません</td></tr>`;
+}
+
+function sessionObject() {
+  return {
+    format: "typing-error-logger-v1",
+    exported_at: new Date().toISOString(),
+    user_agent: navigator.userAgent,
+    prompts: prompts.map(([label,target]) => ({label,target})),
+    summary: {
+      total_events: events.length,
+      correct_keystrokes: events.filter(x => x.correct).length,
+      incorrect_printable_keystrokes: events.filter(x => !x.correct && x.actual_key?.length === 1).length,
+      completed_prompts: Math.min(pIndex, prompts.length)
+    },
+    events
+  };
+}
+
+function download(name, text, mime) {
+  const blob = new Blob([text], {type: mime});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function exportJSON() {
+  download(
+    `typing_log_${new Date().toISOString().replace(/[:.]/g,"-")}.json`,
+    JSON.stringify(sessionObject(), null, 2),
+    "application/json"
+  );
+}
+
+function csvEscape(v) {
+  if (v == null) return "";
+  const s = String(v);
+  return `"${s.replaceAll('"','""')}"`;
+}
+
+function exportCSV() {
+  const keys = [
+    "session_time_ms","prompt_index","prompt_label","target","position_before",
+    "expected_key","actual_key","correct","interval_from_prev_key_ms",
+    "interval_from_prev_correct_ms","prompt_elapsed_ms",
+    "expected_finger","actual_finger","expected_hand","actual_hand","code","repeat"
+  ];
+  const lines = [keys.join(",")];
+  for (const ev of events) {
+    lines.push(keys.map(k => csvEscape(ev[k])).join(","));
+  }
+  download(
+    `typing_log_${new Date().toISOString().replace(/[:.]/g,"-")}.csv`,
+    "\uFEFF" + lines.join("\n"),
+    "text/csv;charset=utf-8"
+  );
+}
+
+$("startBtn").addEventListener("click", startSession);
+$("practice").addEventListener("keydown", recordKey);
+$("jsonBtn").addEventListener("click", exportJSON);
+$("csvBtn").addEventListener("click", exportCSV);
+$("clearBtn").addEventListener("click", () => {
+  active = false;
+  events = [];
+  correctIntervals = [];
+  sessionStart = null;
+  pIndex = 0;
+  pos = 0;
+  $("jp").textContent = "ログを消去しました";
+  $("target").textContent = "";
+  $("typed").textContent = "";
+  updateStats();
+});
+
+// 初期サンプルを正しい内容へ上書き
+$("prompts").value = DEFAULT_PROMPTS.map(x => `${x[0]}|${x[1]}`).join("\n");
+updateStats();
+</script>
+</body>
+</html>
