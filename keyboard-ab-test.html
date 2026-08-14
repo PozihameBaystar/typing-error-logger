@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Keyboard A/B Typing Experiment</title>
+<style>
+:root{font-family:system-ui,-apple-system,"Segoe UI","Noto Sans JP",sans-serif;color-scheme:light dark}
+body{max-width:1150px;margin:24px auto;padding:0 18px 70px}
+.card{border:1px solid #8885;border-radius:12px;padding:16px;margin:14px 0}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:end}
+label{display:flex;flex-direction:column;gap:4px}
+input,select,button{padding:8px 10px;font:inherit}button{cursor:pointer}button:disabled{opacity:.5}
+.muted{opacity:.72}.mono,code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:10px}
+.stat{border:1px solid #8884;border-radius:8px;padding:10px}.big{font-size:1.3rem;font-weight:750}
+#practice{outline:none}#jp{font-size:30px;font-weight:750;margin:10px 0 5px}
+#kana{font-size:18px;opacity:.72}#typed{font-family:ui-monospace;font-size:30px;min-height:1.5em}
+#canonical,#nextKeys{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
+.badge{display:inline-block;border:1px solid #8885;border-radius:999px;padding:2px 8px;margin:2px}
+.wrongflash{animation:flash .15s linear 1}@keyframes flash{from{background:rgba(255,0,0,.32)}to{background:transparent}}
+.progress{height:9px;background:#8883;border-radius:999px;overflow:hidden}.progress>div{height:100%;background:currentColor;width:0}
+table{border-collapse:collapse;width:100%}th,td{border-bottom:1px solid #8884;padding:7px 8px;text-align:left}
+.small{font-size:.9rem}
+</style>
+</head>
+<body>
+<h1>Keyboard A/B Typing Experiment</h1>
+<p class="muted">同じ問題順・同じ制限時間で2台のキーボードを比較します。日本語IMEはOFFにしてください。</p>
+
+<div class="card">
+<h2>1. 実験設定</h2>
+<div class="row">
+<label>キーボードA<input id="nameA" value="SONY INZONE"></label>
+<label>キーボードB<input id="nameB" value="REALFORCE"></label>
+<label>時間
+<select id="duration"><option value="30">30秒</option><option value="60" selected>60秒</option><option value="120">120秒</option><option value="180">180秒</option></select>
+</label>
+<label>順番
+<select id="order"><option value="AB">A → B</option><option value="BA">B → A</option><option value="random">ランダム</option></select>
+</label>
+<label>カテゴリ<select id="category"></select></label>
+<button id="prepareBtn">実験を準備</button>
+</div>
+<p><b>Seed:</b> <span id="seedText" class="mono">—</span>　
+<b>順番:</b> <span id="orderText">—</span>　
+<b>問題数:</b> <span id="poolText">—</span></p>
+<details><summary>指標定義</summary>
+<p class="small">
+<b>生WPM</b>=全printable keydown÷5÷分。
+<b>実効WPM</b>=正しく受理された打鍵÷5÷分。
+<b>正確率</b>=正打鍵÷全printable打鍵。
+<b>隣接キー誤打率</b>=期待キーのQWERTY隣接キーを誤って押した回数÷全printable打鍵。
+</p></details>
+</div>
+
+<div class="card">
+<h2>2. 実行</h2>
+<div id="status">「実験を準備」を押してください。</div>
+<div class="stats" style="margin-top:12px">
+<div class="stat"><div class="muted">現在</div><div class="big" id="currentKeyboard">—</div></div>
+<div class="stat"><div class="muted">残り時間</div><div class="big" id="timeLeft">—</div></div>
+<div class="stat"><div class="muted">生WPM</div><div class="big" id="liveGross">—</div></div>
+<div class="stat"><div class="muted">実効WPM</div><div class="big" id="liveNet">—</div></div>
+<div class="stat"><div class="muted">正確率</div><div class="big" id="liveAcc">—</div></div>
+<div class="stat"><div class="muted">誤打鍵</div><div class="big" id="liveErrors">0</div></div>
+</div>
+<div class="progress" style="margin:12px 0"><div id="timeBar"></div></div>
+<div class="row"><button id="startBtn" disabled>この条件を開始</button><button id="abortBtn" disabled>中断</button></div>
+</div>
+
+<div class="card" id="practice" tabindex="0">
+<h2>3. タイピング</h2>
+<div id="jp">待機中</div>
+<div id="kana"></div>
+<div class="muted small">代表ローマ字</div><div id="canonical"></div>
+<div class="muted small" style="margin-top:8px">入力済み</div><div id="typed"></div>
+<div>次に受理できるキー: <span id="nextKeys">—</span></div>
+</div>
+
+<div class="card">
+<h2>4. A/B比較</h2>
+<table><thead><tr><th>指標</th><th id="headA">A</th><th id="headB">B</th><th>A−B</th></tr></thead><tbody id="comparison"><tr><td colspan="4" class="muted">両条件終了後に表示します。</td></tr></tbody></table>
+</div>
+
+<div class="card">
+<h2>5. 誤入力上位</h2>
+<div class="row">
+<div style="flex:1;min-width:300px"><h3 id="titleA">A</h3><table><thead><tr><th>期待</th><th>実入力</th><th>回数</th></tr></thead><tbody id="errorsA"></tbody></table></div>
+<div style="flex:1;min-width:300px"><h3 id="titleB">B</h3><table><thead><tr><th>期待</th><th>実入力</th><th>回数</th></tr></thead><tbody id="errorsB"></tbody></table></div>
+</div>
+</div>
+
+<div class="card">
+<h2>6. 保存</h2>
+<button id="jsonBtn">実験JSONを書き出す</button>
+<button id="csvBtn">打鍵CSVを書き出す</button>
+<p class="muted small">解析用にはJSON推奨です。</p>
+</div>
+
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+
+const W=[
+["写真","しゃしん"],["新聞","しんぶん"],["会社","かいしゃ"],["練習","れんしゅう"],["技術","ぎじゅつ"],["入力","にゅうりょく"],["出力","しゅつりょく"],["制御","せいぎょ"],["機械","きかい"],["信号","しんご"],["速度","そくど"],["精度","せいど"],["解析","かいせき"],["設計","せっけい"],["実験","じっけん"],["学習","がくしゅう"],["環境","かんきょう"],["文章","ぶんしょう"],["状態","じょうたい"],["推定","すいてい"],["車輪","しゃりん"],["軌道","きどう"],["姿勢","しせい"],["観測","かんそく"],["結果","けっか"],["準備","じゅんび"],["確認","かくにん"],["時間","じかん"],["今日","きょう"],["明日","あした"]
+].map(([display,kana])=>({display,kana,category:"単語"}));
+
+const P1=[["今日は","きょうは"],["朝は","あさは"],["昼休みには","ひるやすみには"],["帰宅したら","きたくしたら"],["出かける前に","でかけるまえに"],["作業の前に","さぎょうのまえに"],["時間があるときは","じかんがあるときは"]];
+const S1=[["予定を確認する","よていをかくにんする"],["水をゆっくり飲む","みずをゆっくりのむ"],["荷物を整理する","にもつをせいりする"],["窓を開けて換気する","まどをあけてかんきする"],["写真を撮って記録する","しゃしんをとってきろくする"],["必要な物を準備する","ひつようなものをじゅんびする"],["少し歩いて体を動かす","すこしあるいてからだをうごかす"],["忘れ物がないか調べる","わすれものがないかしらべる"]];
+const P2=[["プログラム","ぷろぐらむ"],["制御系","せいぎょけい"],["センサー","せんさー"],["状態推定器","じょうたいすいていき"],["シミュレーション","しみゅれーしょん"],["最適化問題","さいてきかもんだい"],["入力信号","にゅうりょくしんごう"],["計測データ","けいそくでーた"],["ロボット","ろぼっと"],["フィードバック制御","ふぃーどばっくせいぎょ"]];
+const S2=[["の動作を確認する","のどうさをかくにんする"],["を繰り返し実行する","をくりかえしじっこうする"],["の誤差を小さくする","のごさをちいさくする"],["を正確に記録する","をせいかくにきろくする"],["の結果を比較する","のけっかをひかくする"],["を安定して動かす","をあんていしてうごかす"],["から必要な情報を得る","からひつようなじょうほうをえる"],["の条件を一つずつ変更する","のじょうけんをひとつずつへんこうする"]];
+const P3=[["ホームポジション","ほーむぽじしょん"],["正しい運指","ただしいうんし"],["一定のリズム","いっていのりずむ"],["打鍵速度","だけんそくど"],["入力精度","にゅうりょくせいど"],["隣接キー","りんせつきー"],["人差し指の位置","ひとさしゆびのいち"],["キーの中心","きーのちゅうしん"]];
+const S3=[["を意識して入力する","をいしきしてにゅうりょくする"],["を崩さずに速く打つ","をくずさずにはやくうつ"],["を保ちながら練習する","をたもちながられんしゅうする"],["を毎回記録して比較する","をまいかいきろくしてひかくする"],["を確認しながら速度を上げる","をかくにんしながらそくどをあげる"],["を安定させることが重要だ","をあんていさせることがじゅうようだ"]];
+function cross(a,b,c){const o=[];for(const x of a)for(const y of b)o.push({display:x[0]+y[0],kana:x[1]+y[1],category:c});return o}
+const BUILTIN=[...W,...cross(P1,S1,"日常"),...cross(P2,S2,"技術"),...cross(P3,S3,"タイピング")];
+
+const R={"あ":["a"],"い":["i"],"う":["u"],"え":["e"],"お":["o"],"か":["ka"],"き":["ki"],"く":["ku"],"け":["ke"],"こ":["ko"],"さ":["sa"],"し":["shi","si","ci"],"す":["su"],"せ":["se"],"そ":["so"],"た":["ta"],"ち":["chi","ti"],"つ":["tsu","tu"],"て":["te"],"と":["to"],"な":["na"],"に":["ni"],"ぬ":["nu"],"ね":["ne"],"の":["no"],"は":["ha"],"ひ":["hi"],"ふ":["fu","hu"],"へ":["he"],"ほ":["ho"],"ま":["ma"],"み":["mi"],"む":["mu"],"め":["me"],"も":["mo"],"や":["ya"],"ゆ":["yu"],"よ":["yo"],"ら":["ra"],"り":["ri"],"る":["ru"],"れ":["re"],"ろ":["ro"],"わ":["wa"],"を":["wo","o"],"が":["ga"],"ぎ":["gi"],"ぐ":["gu"],"げ":["ge"],"ご":["go"],"ざ":["za"],"じ":["ji","zi"],"ず":["zu"],"ぜ":["ze"],"ぞ":["zo"],"だ":["da"],"ぢ":["di"],"づ":["du"],"で":["de"],"ど":["do"],"ば":["ba"],"び":["bi"],"ぶ":["bu"],"べ":["be"],"ぼ":["bo"],"ぱ":["pa"],"ぴ":["pi"],"ぷ":["pu"],"ぺ":["pe"],"ぽ":["po"],"きゃ":["kya"],"きゅ":["kyu"],"きょ":["kyo"],"ぎゃ":["gya"],"ぎゅ":["gyu"],"ぎょ":["gyo"],"しゃ":["sha","sya"],"しゅ":["shu","syu"],"しょ":["sho","syo"],"じゃ":["ja","jya","zya"],"じゅ":["ju","jyu","zyu"],"じょ":["jo","jyo","zyo"],"ちゃ":["cha","tya","cya"],"ちゅ":["chu","tyu","cyu"],"ちょ":["cho","tyo","cyo"],"にゃ":["nya"],"にゅ":["nyu"],"にょ":["nyo"],"ひゃ":["hya"],"ひゅ":["hyu"],"ひょ":["hyo"],"びゃ":["bya"],"びゅ":["byu"],"びょ":["byo"],"ぴゃ":["pya"],"ぴゅ":["pyu"],"ぴょ":["pyo"],"みゃ":["mya"],"みゅ":["myu"],"みょ":["myo"],"りゃ":["rya"],"りゅ":["ryu"],"りょ":["ryo"],"ふぁ":["fa"],"ふぃ":["fi"],"ふぇ":["fe"],"ふぉ":["fo"],"てぃ":["thi"],"でぃ":["dhi"]};
+function tokenize(s){s=s.replace(/[ 　、。！？!?,，．・「」『』（）()]/g,"");const t=[];for(let i=0;i<s.length;){const z=s.slice(i,i+2);if(R[z]){t.push(z);i+=2}else{t.push(s[i]);i++}}return t}
+function rv(t,i){const x=t[i];if(x==="ん")return["n","nn"];if(x==="っ")return["xtu","ltu"];if(x==="ー")return["-"];return R[x]||[x]}
+function vars(t,i){const x=t[i];if(x==="ん"){if(i===t.length-1)return["n","nn"];const f=new Set(rv(t,i+1).map(v=>v[0]));return[...f].some(c=>"aiueoyn".includes(c))?["nn","n'"]:["n","nn"]}if(x==="っ"){const s=new Set(["xtu","ltu"]);if(i+1<t.length)for(const v of rv(t,i+1)){const c=v[0];if(c&&!"aiueon".includes(c))s.add(c)}return[...s]}if(x==="ー"){if(i>0)for(const v of rv(t,i-1))for(let j=v.length-1;j>=0;j--)if("aiueo".includes(v[j]))return[v[j],"-"];return["-"]}return R[x]||[x]}
+const bd=i=>({ti:i,v:null,ci:0}),key=s=>`${s.ti}|${s.v??"#"}|${s.ci}`,uniq=a=>[...new Map(a.map(x=>[key(x),x])).values()];
+function exp(st,t){const o=new Set();for(const s of st){if(s.ti>=t.length)continue;if(s.v===null){for(const v of vars(t,s.ti))if(v[0])o.add(v[0])}else if(s.v[s.ci])o.add(s.v[s.ci])}return o}
+function adv(st,ch,t){const o=[];for(const s of st){if(s.ti>=t.length)continue;if(s.v===null){for(const v of vars(t,s.ti))if(v[0]===ch)o.push(v.length===1?bd(s.ti+1):{ti:s.ti,v,ci:1})}else if(s.v[s.ci]===ch){const n=s.ci+1;o.push(n>=s.v.length?bd(s.ti+1):{ti:s.ti,v:s.v,ci:n})}}return uniq(o)}
+const done=(st,t)=>st.some(s=>s.ti>=t.length&&s.v===null),canon=t=>t.map((_,i)=>vars(t,i)[0]).join("");
+
+const POS={q:[0,0],w:[1,0],e:[2,0],r:[3,0],t:[4,0],y:[5,0],u:[6,0],i:[7,0],o:[8,0],p:[9,0],a:[.25,1],s:[1.25,1],d:[2.25,1],f:[3.25,1],g:[4.25,1],h:[5.25,1],j:[6.25,1],k:[7.25,1],l:[8.25,1],";":[9.25,1],z:[.75,2],x:[1.75,2],c:[2.75,2],v:[3.75,2],b:[4.75,2],n:[5.75,2],m:[6.75,2],",":[7.75,2],".":[8.75,2],"/":[9.75,2]};
+function near(a,b){a=(a||"").toLowerCase();b=(b||"").toLowerCase();if(!POS[a]||!POS[b]||a===b)return false;return Math.abs(POS[a][1]-POS[b][1])<=1&&Math.abs(POS[a][0]-POS[b][0])<=1.15}
+function rng(seed){return function(){let t=seed+=0x6D2B79F5;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);return((t^t>>>14)>>>0)/4294967296}}
+function shuffle(a,seed){a=[...a];const r=rng(seed);for(let i=a.length-1;i>0;i--){const j=Math.floor(r()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
+
+let E=null,active=false,run=null,pi=0,toks=[],states=[],typed="",startPerf=0,timer=null;
+function populate(){$("category").innerHTML=["すべて",...new Set(BUILTIN.map(x=>x.category))].map(x=>`<option>${x}</option>`).join("");heads()}
+function heads(){$("headA").textContent=$("nameA").value;$("headB").textContent=$("nameB").value;$("titleA").textContent=$("nameA").value;$("titleB").textContent=$("nameB").value}
+$("nameA").oninput=heads;$("nameB").oninput=heads;
+function prepare(){const seed=crypto.getRandomValues(new Uint32Array(1))[0]>>>0;let order=$("order").value;if(order==="random")order=Math.random()<.5?"AB":"BA";const cat=$("category").value,pool=BUILTIN.filter(x=>cat==="すべて"||x.category===cat);E={format:"keyboard-ab-typing-experiment-v1",created_at:new Date().toISOString(),seed,duration_sec:+$("duration").value,category:cat,keyboardA:$("nameA").value||"A",keyboardB:$("nameB").value||"B",order,sequence:shuffle(pool,seed),runs:{A:null,B:null}};$("seedText").textContent=seed;$("orderText").textContent=order==="AB"?`${E.keyboardA} → ${E.keyboardB}`:`${E.keyboardB} → ${E.keyboardA}`;$("poolText").textContent=`${pool.length}問`;$("startBtn").disabled=false;nextUI()}
+function nextCond(){if(!E)return null;for(const c of E.order)if(!E.runs[c])return c;return null}
+function nextUI(){const c=nextCond();if(!c){$("status").textContent="A/Bテスト完了。比較結果を確認してください。";$("currentKeyboard").textContent="完了";$("startBtn").disabled=true;renderComp();return}const n=c==="A"?E.keyboardA:E.keyboardB;$("status").textContent=`次は ${n}。準備できたら開始してください。`;$("currentKeyboard").textContent=n;$("timeLeft").textContent=`${E.duration_sec} s`}
+function startRun(){const c=nextCond();if(!c)return;run={condition:c,keyboard:c==="A"?E.keyboardA:E.keyboardB,started_at:new Date().toISOString(),events:[],completed_prompts:[],printable:0,correct:0,errors:0,adjacentErrors:0,duplicateErrors:0};pi=0;load();active=true;startPerf=performance.now();$("startBtn").disabled=true;$("abortBtn").disabled=false;$("status").textContent=`計測中: ${run.keyboard}`;$("practice").focus();timer=setInterval(tick,50);tick()}
+function load(){const p=E.sequence[pi%E.sequence.length];toks=tokenize(p.kana);states=[bd(0)];typed="";renderPrompt()}
+function renderPrompt(){const p=E.sequence[pi%E.sequence.length];$("jp").textContent=p.display;$("kana").textContent=`よみ: ${p.kana}`;$("canonical").textContent=canon(toks);$("typed").textContent=typed;$("nextKeys").innerHTML=[...exp(states,toks)].sort().map(c=>`<span class="badge">${c}</span>`).join("")}
+function tick(){if(!active)return;const el=(performance.now()-startPerf)/1000,rem=Math.max(0,E.duration_sec-el);$("timeLeft").textContent=`${rem.toFixed(1)} s`;$("timeBar").style.width=`${Math.min(100,100*el/E.duration_sec)}%`;live(el);if(el>=E.duration_sec)finish()}
+function live(el){const m=Math.max(el/60,1/60000);$("liveGross").textContent=(run.printable/5/m).toFixed(1);$("liveNet").textContent=(run.correct/5/m).toFixed(1);$("liveAcc").textContent=run.printable?`${(100*run.correct/run.printable).toFixed(2)}%`:"—";$("liveErrors").textContent=run.errors}
+function keydown(e){if(!active||e.ctrlKey||e.altKey||e.metaKey)return;let k=e.key;if(k.length===1)k=k.toLowerCase();if(k.length!==1)return;e.preventDefault();const t=performance.now(),xs=[...exp(states,toks)].sort(),ns=adv(states,k,toks),ok=ns.length>0,prev=[...run.events].reverse().find(x=>x.correct)?.actual_key??null,adj=!ok&&xs.some(x=>near(x,k)),dup=!ok&&prev===k;run.printable++;if(ok)run.correct++;else{run.errors++;if(adj)run.adjacentErrors++;if(dup)run.duplicateErrors++}run.events.push({session_ms:+(t-startPerf).toFixed(3),prompt_index:pi,prompt_display:E.sequence[pi%E.sequence.length].display,prompt_kana:E.sequence[pi%E.sequence.length].kana,typed_before:typed,expected_keys:xs,actual_key:k,correct:ok,adjacent_error:adj,duplicate_error:dup,code:e.code,repeat:e.repeat});if(ok){states=ns;typed+=k;if(done(states,toks)){run.completed_prompts.push({index:pi,display:E.sequence[pi%E.sequence.length].display,kana:E.sequence[pi%E.sequence.length].kana,accepted_romaji:typed,completed_at_ms:+(t-startPerf).toFixed(3)});pi++;load()}else renderPrompt()}else{const b=$("practice");b.classList.remove("wrongflash");void b.offsetWidth;b.classList.add("wrongflash")}}
+$("practice").addEventListener("keydown",keydown);
+function summary(r){const min=E.duration_sec/60;return{duration_sec:E.duration_sec,printable:r.printable,correct:r.correct,errors:r.errors,gross_wpm:r.printable/5/min,effective_wpm:r.correct/5/min,accuracy:r.printable?r.correct/r.printable:0,adjacent_errors:r.adjacentErrors,adjacent_error_rate:r.printable?r.adjacentErrors/r.printable:0,adjacent_error_share:r.errors?r.adjacentErrors/r.errors:0,duplicate_errors:r.duplicateErrors,completed_prompts:r.completed_prompts.length}}
+function finish(){if(!active)return;active=false;clearInterval(timer);timer=null;$("abortBtn").disabled=true;run.ended_at=new Date().toISOString();run.summary=summary(run);E.runs[run.condition]=run;run=null;renderComp();renderErrors();nextUI()}
+function abort(){if(!active)return;active=false;clearInterval(timer);timer=null;run=null;$("abortBtn").disabled=true;$("startBtn").disabled=false;$("status").textContent="中断しました。この条件を最初から再実施してください。"}
+const f=(v,d=1)=>Number.isFinite(v)?v.toFixed(d):"—",pc=(v,d=2)=>Number.isFinite(v)?`${(100*v).toFixed(d)}%`:"—";
+function renderComp(){if(!E)return;const a=E.runs.A?.summary,b=E.runs.B?.summary;if(!a&&!b)return;const rows=[["生WPM","gross_wpm",v=>f(v,1)],["実効WPM","effective_wpm",v=>f(v,1)],["正確率","accuracy",v=>pc(v,2)],["誤打鍵数","errors",v=>f(v,0)],["隣接キー誤打率","adjacent_error_rate",v=>pc(v,2)],["隣接誤打割合","adjacent_error_share",v=>pc(v,1)],["隣接キー誤打数","adjacent_errors",v=>f(v,0)],["重複打鍵数","duplicate_errors",v=>f(v,0)],["完了問題数","completed_prompts",v=>f(v,0)]];$("comparison").innerHTML=rows.map(([n,k,fmt])=>{const av=a?.[k],bv=b?.[k],d=Number.isFinite(av)&&Number.isFinite(bv)?av-bv:NaN;let ds="—";if(Number.isFinite(d))ds=(k==="accuracy"||k.includes("rate")||k==="adjacent_error_share")?`${d>=0?"+":""}${(100*d).toFixed(2)} pt`:`${d>=0?"+":""}${d.toFixed(k.includes("wpm")?1:0)}`;return`<tr><td>${n}</td><td>${a?fmt(av):"—"}</td><td>${b?fmt(bv):"—"}</td><td>${ds}</td></tr>`}).join("")}
+function renderErrors(){for(const c of["A","B"]){const r=E.runs[c],el=$(c==="A"?"errorsA":"errorsB");if(!r){el.innerHTML='<tr><td colspan="3" class="muted">未実施</td></tr>';continue}const m={};for(const e of r.events.filter(x=>!x.correct)){const ex=e.expected_keys.join("/"),k=`${ex}\t${e.actual_key}`;m[k]=(m[k]||0)+1}const rows=Object.entries(m).sort((a,b)=>b[1]-a[1]).slice(0,20);el.innerHTML=rows.length?rows.map(([k,n])=>{const[x,y]=k.split("\t");return`<tr><td class="mono">${x}</td><td class="mono">${y}</td><td>${n}</td></tr>`}).join(""):'<tr><td colspan="3" class="muted">誤打鍵なし</td></tr>'}}
+function dl(name,text,mime){const b=new Blob([text],{type:mime}),u=URL.createObjectURL(b),a=document.createElement("a");a.href=u;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(u),1000)}
+function exportJSON(){if(!E)return alert("先に実験を準備してください");dl(`keyboard_ab_${new Date().toISOString().replace(/[:.]/g,"-")}.json`,JSON.stringify(E,null,2),"application/json")}
+function q(v){if(v==null)return"";if(Array.isArray(v))v=v.join("|");return`"${String(v).replaceAll('"','""')}"`}
+function exportCSV(){if(!E)return alert("先に実験を準備してください");const C=["condition","keyboard","session_ms","prompt_index","prompt_display","prompt_kana","typed_before","expected_keys","actual_key","correct","adjacent_error","duplicate_error","code","repeat"],L=[C.join(",")];for(const c of["A","B"]){const r=E.runs[c];if(!r)continue;for(const e of r.events){const z={condition:c,keyboard:r.keyboard,...e};L.push(C.map(k=>q(z[k])).join(","))}}dl(`keyboard_ab_${new Date().toISOString().replace(/[:.]/g,"-")}.csv`,"\uFEFF"+L.join("\n"),"text/csv;charset=utf-8")}
+$("prepareBtn").onclick=prepare;$("startBtn").onclick=startRun;$("abortBtn").onclick=abort;$("jsonBtn").onclick=exportJSON;$("csvBtn").onclick=exportCSV;populate();
+</script>
+</body>
+</html>
