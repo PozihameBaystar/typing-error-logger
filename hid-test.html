@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HID Key Depth Probe</title>
+<style>
+:root{font-family:system-ui,-apple-system,"Segoe UI","Noto Sans JP",sans-serif;color-scheme:light dark}
+body{max-width:1200px;margin:24px auto;padding:0 18px 70px}h1{margin-bottom:.2rem}.muted{opacity:.72}.card{border:1px solid #8886;border-radius:12px;padding:16px;margin:14px 0}.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}button,input{padding:8px 11px}button{cursor:pointer}button:disabled{opacity:.5;cursor:not-allowed}.ok{color:#2a9d4b;font-weight:700}.bad{color:#d44;font-weight:700}.warn{color:#d88b1c;font-weight:700}code,pre,.mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}pre{white-space:pre-wrap;word-break:break-word;background:#7771;border-radius:8px;padding:12px;max-height:320px;overflow:auto}table{border-collapse:collapse;width:100%;font-size:.94rem}th,td{border-bottom:1px solid #8884;padding:6px 8px;text-align:left}.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px}.stat{border:1px solid #8884;border-radius:8px;padding:10px}.big{font-size:1.3rem;font-weight:700}#rawLog{height:300px;overflow:auto;border:1px solid #8884;border-radius:8px;padding:8px;background:#7771}.logline{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.86rem;white-space:pre-wrap}.hid{color:#69c}.key{color:#c96}.marker{color:#b6c}.small{font-size:.9rem}
+</style>
+</head>
+<body>
+<h1>HID Key Depth Probe</h1>
+<p class="muted">WebHIDの生入力レポートと通常のkeydown/keyupを同一時刻軸で記録します。磁気式キーボードがストローク量をPCへ送っていれば、押し込みに応じて変化するバイトを特定できる可能性があります。</p>
+
+<div class="card"><h2>1. ブラウザ確認</h2><div id="support"></div><p class="muted small">Chrome / Edge系推奨。GitHub PagesなどHTTPS上で実行してください。標準Keyboard HIDは保護される場合がありますが、メーカー独自HIDが公開されていれば取得できる可能性があります。</p></div>
+
+<div class="card"><h2>2. HIDデバイス接続</h2><div class="row"><button id="requestBtn">HIDデバイスを選択</button><button id="openKnownBtn">許可済みデバイスを再接続</button><button id="disconnectBtn" disabled>切断</button></div><div id="deviceStatus" class="muted" style="margin-top:10px">未接続</div><pre id="deviceInfo">デバイス情報はここに表示されます。</pre></div>
+
+<div class="card"><h2>3. 記録</h2><div class="row"><button id="startBtn" disabled>記録開始</button><button id="stopBtn" disabled>記録停止</button><button id="clearBtn">ログ消去</button><input id="markerText" placeholder="例: Aキーゆっくり押下"><button id="markerBtn">マーカー追加</button></div><div class="stats" style="margin-top:12px"><div class="stat"><div class="muted">HIDレポート</div><div class="big" id="hidCount">0</div></div><div class="stat"><div class="muted">keydown</div><div class="big" id="keydownCount">0</div></div><div class="stat"><div class="muted">keyup</div><div class="big" id="keyupCount">0</div></div><div class="stat"><div class="muted">記録時間</div><div class="big" id="elapsed">0.0 s</div></div></div><p class="muted small">推奨：記録開始 → 2秒触らない → マーカー → 1キーだけを非常にゆっくり半押し→底打ち→離す、を5〜10回 → 記録停止 → JSONを書き出し。</p></div>
+
+<div class="card"><h2>4. 変動バイト解析</h2><p class="muted">同じReport ID・同じバイト位置について、値の変化回数・最小値・最大値を自動集計します。アナログ深度値が含まれていれば、ここでレンジが大きくなる可能性があります。</p><table><thead><tr><th>Report ID</th><th>byte offset</th><th>変化回数</th><th>最小</th><th>最大</th><th>レンジ</th><th>最新値</th></tr></thead><tbody id="byteStats"></tbody></table></div>
+
+<div class="card"><h2>5. 生ログ（直近300件）</h2><div id="rawLog"></div></div>
+
+<div class="card"><h2>6. 保存</h2><div class="row"><button id="jsonBtn">JSONを書き出す</button><button id="csvBtn">CSVを書き出す</button></div><p class="muted small">解析用にはJSON推奨。デバイス情報、HID生データ、keydown/keyup、マーカー、変動バイト集計を保存します。</p></div>
+
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+let device=null,recording=false,sessionStartPerf=null,sessionStartEpoch=null,timerId=null;
+let events=[],hidCount=0,keydownCount=0,keyupCount=0;
+const byteStats=new Map(),previousReports=new Map();
+
+function nowPair(){return{iso:new Date().toISOString(),epoch_ms:Date.now(),perf_ms:performance.now()}}
+function relPerf(p){return sessionStartPerf==null?null:+(p-sessionStartPerf).toFixed(3)}
+function hex2(n){return n.toString(16).padStart(2,"0").toUpperCase()}
+function bytesFromDataView(v){const a=[];for(let i=0;i<v.byteLength;i++)a.push(v.getUint8(i));return a}
+function usageHex(n){return n==null?"—":`0x${Number(n).toString(16).toUpperCase()}`}
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]))}
+
+function renderSupport(){if("hid" in navigator){$("support").innerHTML='<span class="ok">WebHID利用可能</span>'}else{$("support").innerHTML='<span class="bad">WebHID非対応ブラウザ</span>';$("requestBtn").disabled=true;$("openKnownBtn").disabled=true}}
+
+function snap(dev){return{productName:dev?.productName??null,vendorId:dev?.vendorId??null,productId:dev?.productId??null,opened:!!dev?.opened,collections:(dev?.collections||[]).map(c=>({usagePage:c.usagePage,usage:c.usage,type:c.type,inputReports:(c.inputReports||[]).map(r=>({reportId:r.reportId,items:(r.items||[]).map(i=>({usagePage:i.usagePage,usages:i.usages,reportSize:i.reportSize,reportCount:i.reportCount,logicalMinimum:i.logicalMinimum,logicalMaximum:i.logicalMaximum,physicalMinimum:i.physicalMinimum,physicalMaximum:i.physicalMaximum}))})),outputReports:(c.outputReports||[]).map(r=>({reportId:r.reportId,itemCount:(r.items||[]).length})),featureReports:(c.featureReports||[]).map(r=>({reportId:r.reportId,itemCount:(r.items||[]).length}))}))}}
+
+function formatCollections(cs){const lines=[];for(const c of cs||[]){lines.push(`Collection usagePage=${usageHex(c.usagePage)} usage=${usageHex(c.usage)} type=${c.type??"?"}`);for(const r of c.inputReports||[]){lines.push(`  InputReport ID=${r.reportId} items=${(r.items||[]).length}`);for(const it of r.items||[])lines.push(`    item usagePage=${usageHex(it.usagePage)} size=${it.reportSize} count=${it.reportCount} logical=[${it.logicalMinimum},${it.logicalMaximum}] physical=[${it.physicalMinimum},${it.physicalMaximum}]`)}for(const r of c.featureReports||[])lines.push(`  FeatureReport ID=${r.reportId} items=${(r.items||[]).length}`);for(const r of c.outputReports||[])lines.push(`  OutputReport ID=${r.reportId} items=${(r.items||[]).length}`)}return lines}
+
+async function attachDevice(dev){try{if(!dev.opened)await dev.open();if(device&&device!==dev)try{device.removeEventListener("inputreport",onInputReport)}catch(_){}device=dev;device.addEventListener("inputreport",onInputReport);$("deviceStatus").innerHTML=`<span class="ok">接続済み:</span> ${esc(device.productName||"(名称なし)")} / VID=${usageHex(device.vendorId)} PID=${usageHex(device.productId)}`;const lines=[`productName: ${device.productName}`,`vendorId: ${usageHex(device.vendorId)} (${device.vendorId})`,`productId: ${usageHex(device.productId)} (${device.productId})`,`opened: ${device.opened}`,"","Collections:",...formatCollections(device.collections)];$("deviceInfo").textContent=lines.join("\n");$("startBtn").disabled=false;$("disconnectBtn").disabled=false;addSystem("device_connected",snap(device))}catch(err){$("deviceStatus").innerHTML=`<span class="bad">接続失敗:</span> ${esc(err)}`}}
+
+async function requestDevice(){try{const list=await navigator.hid.requestDevice({filters:[]});if(list.length)await attachDevice(list[0])}catch(err){$("deviceStatus").innerHTML=`<span class="bad">選択/接続エラー:</span> ${esc(err)}`}}
+async function openKnown(){try{const list=await navigator.hid.getDevices();if(!list.length){$("deviceStatus").innerHTML='<span class="warn">許可済みHIDデバイスがありません。</span>';return}const preferred=list.find(d=>/inzone|sony/i.test(d.productName||""))||list[0];await attachDevice(preferred)}catch(err){$("deviceStatus").innerHTML=`<span class="bad">再接続エラー:</span> ${esc(err)}`}}
+async function disconnect(){stopRecording();if(device){try{device.removeEventListener("inputreport",onInputReport)}catch(_){}try{if(device.opened)await device.close()}catch(_){}}device=null;$("deviceStatus").textContent="未接続";$("deviceInfo").textContent="デバイス情報はここに表示されます。";$("startBtn").disabled=true;$("disconnectBtn").disabled=true}
+
+function onInputReport(ev){if(!recording)return;const t=nowPair(),bytes=bytesFromDataView(ev.data),rid=ev.reportId??0;const rec={type:"hid_input",iso:t.iso,epoch_ms:t.epoch_ms,perf_ms:+t.perf_ms.toFixed(3),session_ms:relPerf(t.perf_ms),report_id:rid,byte_length:bytes.length,bytes,hex:bytes.map(hex2).join(" ")};events.push(rec);hidCount++;updateByteStatistics(rid,bytes);addLog(`[${fmt(rec.session_ms)}] HID rid=${rid} len=${bytes.length}  ${rec.hex}`,"hid");updateCounters()}
+
+function updateByteStatistics(rid,bytes){const prev=previousReports.get(rid);for(let i=0;i<bytes.length;i++){const k=`${rid}:${i}`;let s=byteStats.get(k);if(!s){s={reportId:rid,offset:i,changes:0,min:bytes[i],max:bytes[i],last:bytes[i],count:0};byteStats.set(k,s)}s.count++;s.min=Math.min(s.min,bytes[i]);s.max=Math.max(s.max,bytes[i]);if(prev&&i<prev.length&&prev[i]!==bytes[i])s.changes++;s.last=bytes[i]}previousReports.set(rid,[...bytes]);renderByteStats()}
+function renderByteStats(){const rows=[...byteStats.values()].filter(s=>s.changes>0||s.max>s.min).sort((a,b)=>((b.max-b.min)-(a.max-a.min))||(b.changes-a.changes)).slice(0,80).map(s=>`<tr><td>${s.reportId}</td><td>${s.offset}</td><td>${s.changes}</td><td>${s.min}</td><td>${s.max}</td><td>${s.max-s.min}</td><td>${s.last}</td></tr>`).join("");$("byteStats").innerHTML=rows||'<tr><td colspan="7" class="muted">まだ変動するバイトは観測されていません。</td></tr>'}
+
+function keyboardRecord(kind,e){if(!recording)return;const t=nowPair(),rec={type:kind,iso:t.iso,epoch_ms:t.epoch_ms,perf_ms:+t.perf_ms.toFixed(3),session_ms:relPerf(t.perf_ms),key:e.key,code:e.code,repeat:e.repeat,location:e.location,ctrl:e.ctrlKey,alt:e.altKey,shift:e.shiftKey,meta:e.metaKey};events.push(rec);kind==="keydown"?keydownCount++:keyupCount++;addLog(`[${fmt(rec.session_ms)}] ${kind.toUpperCase()} key=${JSON.stringify(e.key)} code=${e.code} repeat=${e.repeat}`,"key");updateCounters()}
+function addSystem(name,payload={}){const t=nowPair();events.push({type:"system",name,iso:t.iso,epoch_ms:t.epoch_ms,perf_ms:+t.perf_ms.toFixed(3),session_ms:relPerf(t.perf_ms),payload})}
+function addMarker(){const text=$("markerText").value.trim()||"marker",t=nowPair(),rec={type:"marker",label:text,iso:t.iso,epoch_ms:t.epoch_ms,perf_ms:+t.perf_ms.toFixed(3),session_ms:relPerf(t.perf_ms)};events.push(rec);addLog(`[${fmt(rec.session_ms)}] MARKER ${text}`,"marker");$("markerText").value=""}
+
+function startRecording(){if(!device||!device.opened){alert("先にHIDデバイスを接続してください。");return}recording=true;sessionStartPerf=performance.now();sessionStartEpoch=Date.now();hidCount=keydownCount=keyupCount=0;events=[];byteStats.clear();previousReports.clear();addSystem("recording_started",snap(device));$("startBtn").disabled=true;$("stopBtn").disabled=false;clearInterval(timerId);timerId=setInterval(updateCounters,100);addLog("[0.000 ms] RECORDING START","marker");updateCounters();renderByteStats()}
+function stopRecording(){if(!recording)return;addSystem("recording_stopped");recording=false;$("startBtn").disabled=!device;$("stopBtn").disabled=true;clearInterval(timerId);timerId=null;updateCounters();addLog(`[${fmt(currentElapsed())}] RECORDING STOP`,"marker")}
+function clearAll(){events=[];byteStats.clear();previousReports.clear();hidCount=keydownCount=keyupCount=0;sessionStartPerf=recording?performance.now():null;sessionStartEpoch=recording?Date.now():null;$("rawLog").innerHTML="";renderByteStats();updateCounters()}
+function currentElapsed(){return sessionStartPerf==null?0:performance.now()-sessionStartPerf}
+function updateCounters(){$("hidCount").textContent=hidCount;$("keydownCount").textContent=keydownCount;$("keyupCount").textContent=keyupCount;$("elapsed").textContent=`${(currentElapsed()/1000).toFixed(1)} s`}
+function fmt(ms){return ms==null?"—":`${Number(ms).toFixed(3)} ms`}
+function addLog(text,cls=""){const d=document.createElement("div");d.className=`logline ${cls}`;d.textContent=text;const box=$("rawLog");box.appendChild(d);while(box.children.length>300)box.removeChild(box.firstChild);box.scrollTop=box.scrollHeight}
+
+function byteStatsObject(){return[...byteStats.values()].map(s=>({report_id:s.reportId,byte_offset:s.offset,samples:s.count,changes:s.changes,min:s.min,max:s.max,range:s.max-s.min,last:s.last})).sort((a,b)=>(b.range-a.range)||(b.changes-a.changes))}
+function exportObject(){return{format:"hid-key-depth-probe-v1",exported_at:new Date().toISOString(),page:{user_agent:navigator.userAgent,secure_context:window.isSecureContext,webhid_supported:"hid" in navigator},device:snap(device),session:{start_epoch_ms:sessionStartEpoch,start_iso:sessionStartEpoch?new Date(sessionStartEpoch).toISOString():null,recording},summary:{hid_input_reports:hidCount,keydown_events:keydownCount,keyup_events:keyupCount,total_events:events.length},byte_statistics:byteStatsObject(),events}}
+function download(name,text,mime){const blob=new Blob([text],{type:mime}),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
+function exportJSON(){download(`hid_depth_probe_${new Date().toISOString().replace(/[:.]/g,"-")}.json`,JSON.stringify(exportObject(),null,2),"application/json")}
+function csvEscape(v){if(v==null)return"";if(Array.isArray(v))v=v.join(" ");const s=String(v);return`"${s.replaceAll('"','""')}"`}
+function exportCSV(){const cols=["type","name","label","iso","epoch_ms","perf_ms","session_ms","report_id","byte_length","hex","key","code","repeat","location","ctrl","alt","shift","meta"],lines=[cols.join(",")];for(const ev of events)lines.push(cols.map(k=>csvEscape(ev[k])).join(","));download(`hid_depth_probe_${new Date().toISOString().replace(/[:.]/g,"-")}.csv`,"\uFEFF"+lines.join("\n"),"text/csv;charset=utf-8")}
+
+$("requestBtn").addEventListener("click",requestDevice);$("openKnownBtn").addEventListener("click",openKnown);$("disconnectBtn").addEventListener("click",disconnect);$("startBtn").addEventListener("click",startRecording);$("stopBtn").addEventListener("click",stopRecording);$("clearBtn").addEventListener("click",clearAll);$("markerBtn").addEventListener("click",addMarker);$("jsonBtn").addEventListener("click",exportJSON);$("csvBtn").addEventListener("click",exportCSV);
+window.addEventListener("keydown",e=>keyboardRecord("keydown",e),true);window.addEventListener("keyup",e=>keyboardRecord("keyup",e),true);
+if("hid" in navigator){navigator.hid.addEventListener("connect",e=>addSystem("hid_connect_event",snap(e.device)));navigator.hid.addEventListener("disconnect",e=>{addSystem("hid_disconnect_event",snap(e.device));if(device===e.device){device=null;stopRecording();$("deviceStatus").innerHTML='<span class="warn">デバイスが切断されました。</span>';$("startBtn").disabled=true;$("disconnectBtn").disabled=true}})}
+renderSupport();renderByteStats();updateCounters();
+</script>
+</body>
+</html>
