@@ -61,8 +61,8 @@ table{border-collapse:collapse;width:100%}th,td{border-bottom:1px solid #8884;pa
   <a href="./hid-test.html">HIDテスト</a>
 </nav>
 
-<h1>Keyboard A/B Typing Experiment</h1>
-<p class="muted">同じ問題順・同じ制限時間で2台のキーボードを比較します。日本語IMEはOFFにしてください。</p>
+<h1>Keyboard A/B Typing Experiment <span style="font-size:.45em;opacity:.55">v2.1</span></h1>
+<p class="muted">同じ問題順・同じ制限時間で2台のキーボードを比較します。日本語IMEはOFFにしてください。 <span class="mono">build: AB-2.1</span></p>
 
 <div class="card">
 <h2>1. 実験設定</h2>
@@ -215,7 +215,26 @@ function live(el){const m=Math.max(el/60,1/60000);$("liveGross").textContent=(ru
 function keydown(e){if(!active||e.ctrlKey||e.altKey||e.metaKey)return;let k=e.key;if(k.length===1)k=k.toLowerCase();if(k.length!==1)return;e.preventDefault();const t=performance.now(),xs=[...exp(states,toks)].sort(),ns=adv(states,k,toks),ok=ns.length>0,prev=[...run.events].reverse().find(x=>x.correct)?.actual_key??null,adj=!ok&&xs.some(x=>near(x,k)),dup=!ok&&prev===k;run.printable++;if(ok)run.correct++;else{run.errors++;if(adj)run.adjacentErrors++;if(dup)run.duplicateErrors++}run.events.push({session_ms:+(t-startPerf).toFixed(3),prompt_index:pi,prompt_display:E.sequence[pi%E.sequence.length].display,prompt_kana:E.sequence[pi%E.sequence.length].kana,typed_before:typed,expected_keys:xs,actual_key:k,correct:ok,adjacent_error:adj,duplicate_error:dup,code:e.code,repeat:e.repeat});if(ok){states=ns;typed+=k;if(done(states,toks)){run.completed_prompts.push({index:pi,display:E.sequence[pi%E.sequence.length].display,kana:E.sequence[pi%E.sequence.length].kana,accepted_romaji:typed,completed_at_ms:+(t-startPerf).toFixed(3)});pi++;load()}else renderPrompt()}else{const b=$("practice");b.classList.remove("wrongflash");void b.offsetWidth;b.classList.add("wrongflash")}}
 $("practice").addEventListener("keydown",keydown);
 function summary(r){const min=E.duration_sec/60;return{duration_sec:E.duration_sec,printable:r.printable,correct:r.correct,errors:r.errors,gross_wpm:r.printable/5/min,effective_wpm:r.correct/5/min,accuracy:r.printable?r.correct/r.printable:0,adjacent_errors:r.adjacentErrors,adjacent_error_rate:r.printable?r.adjacentErrors/r.printable:0,adjacent_error_share:r.errors?r.adjacentErrors/r.errors:0,duplicate_errors:r.duplicateErrors,completed_prompts:r.completed_prompts.length}}
-function finish(){if(!active)return;active=false;clearInterval(timer);timer=null;$("abortBtn").disabled=true;run.ended_at=new Date().toISOString();run.summary=summary(run);E.runs[run.condition]=run;run=null;renderComp();renderErrors();nextUI()}
+function finish(){
+  if(!active)return;
+
+  active=false;
+  clearInterval(timer);
+  timer=null;
+  $("abortBtn").disabled=true;
+
+  run.ended_at=new Date().toISOString();
+  run.summary=summary(run);
+  E.runs[run.condition]=run;
+  run=null;
+
+  // 次条件を先に有効化する。
+  // 比較表の描画で万一例外が出ても2条件目を開始できるようにする。
+  nextUI();
+
+  renderComp();
+  renderErrors();
+}
 function abort(){if(!active)return;active=false;clearInterval(timer);timer=null;run=null;$("abortBtn").disabled=true;$("startBtn").disabled=false;$("status").textContent="中断しました。この条件を最初から再実施してください。"}
 const f=(v,d=1)=>Number.isFinite(v)?v.toFixed(d):"—",pc=(v,d=2)=>Number.isFinite(v)?`${(100*v).toFixed(d)}%`:"—";
 function renderComp(){if(!E)return;const a=E.runs.A?.summary,b=E.runs.B?.summary;if(!a&&!b)return;const rows=[["生WPM","gross_wpm",v=>f(v,1)],["実効WPM","effective_wpm",v=>f(v,1)],["正確率","accuracy",v=>pc(v,2)],["誤打鍵数","errors",v=>f(v,0)],["隣接キー誤打率","adjacent_error_rate",v=>pc(v,2)],["隣接誤打割合","adjacent_error_share",v=>pc(v,1)],["隣接キー誤打数","adjacent_errors",v=>f(v,0)],["重複打鍵数","duplicate_errors",v=>f(v,0)],["完了問題数","completed_prompts",v=>f(v,0)]];$("comparison").innerHTML=rows.map(([n,k,fmt])=>{const av=a?.[k],bv=b?.[k],d=Number.isFinite(av)&&Number.isFinite(bv)?av-bv:NaN;let ds="—";if(Number.isFinite(d))ds=(k==="accuracy"||k.includes("rate")||k==="adjacent_error_share")?`${d>=0?"+":""}${(100*d).toFixed(2)} pt`:`${d>=0?"+":""}${d.toFixed(k.includes("wpm")?1:0)}`;return`<tr><td>${n}</td><td>${a?fmt(av):"—"}</td><td>${b?fmt(bv):"—"}</td><td>${ds}</td></tr>`}).join("")}
