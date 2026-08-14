@@ -171,7 +171,42 @@ function heads(){$("headA").textContent=$("nameA").value;$("headB").textContent=
 $("nameA").oninput=heads;$("nameB").oninput=heads;
 function prepare(){const seed=crypto.getRandomValues(new Uint32Array(1))[0]>>>0;let order=$("order").value;if(order==="random")order=Math.random()<.5?"AB":"BA";const cat=$("category").value,pool=BUILTIN.filter(x=>cat==="すべて"||x.category===cat);E={format:"keyboard-ab-typing-experiment-v1",created_at:new Date().toISOString(),seed,duration_sec:+$("duration").value,category:cat,keyboardA:$("nameA").value||"A",keyboardB:$("nameB").value||"B",order,sequence:shuffle(pool,seed),runs:{A:null,B:null}};$("seedText").textContent=seed;$("orderText").textContent=order==="AB"?`${E.keyboardA} → ${E.keyboardB}`:`${E.keyboardB} → ${E.keyboardA}`;$("poolText").textContent=`${pool.length}問`;$("startBtn").disabled=false;nextUI()}
 function nextCond(){if(!E)return null;for(const c of E.order)if(!E.runs[c])return c;return null}
-function nextUI(){const c=nextCond();if(!c){$("status").textContent="A/Bテスト完了。比較結果を確認してください。";$("currentKeyboard").textContent="完了";$("startBtn").disabled=true;renderComp();return}const n=c==="A"?E.keyboardA:E.keyboardB;$("status").textContent=`次は ${n}。準備できたら開始してください。`;$("currentKeyboard").textContent=n;$("timeLeft").textContent=`${E.duration_sec} s`}
+function nextUI(){
+  const c=nextCond();
+
+  if(!c){
+    $("status").textContent="A/Bテスト完了。比較結果を確認してください。";
+    $("currentKeyboard").textContent="完了";
+    $("startBtn").disabled=true;
+    $("abortBtn").disabled=true;
+    renderComp();
+    return;
+  }
+
+  const n=c==="A"?E.keyboardA:E.keyboardB;
+
+  // 次条件を開始できるよう、1条件目終了時にdisabledになった開始ボタンを復帰させる。
+  $("startBtn").disabled=false;
+  $("abortBtn").disabled=true;
+
+  $("status").textContent=`次は ${n}。準備できたら開始してください。`;
+  $("currentKeyboard").textContent=n;
+  $("timeLeft").textContent=`${E.duration_sec} s`;
+
+  // 前条件のライブ表示を次条件へ持ち越さない。
+  $("liveGross").textContent="—";
+  $("liveNet").textContent="—";
+  $("liveAcc").textContent="—";
+  $("liveErrors").textContent="0";
+  $("timeBar").style.width="0%";
+
+  // タイピング欄も待機状態へ戻す。
+  $("jp").textContent="待機中";
+  $("kana").textContent="";
+  $("canonical").textContent="";
+  $("typed").textContent="";
+  $("nextKeys").textContent="—";
+}
 function startRun(){const c=nextCond();if(!c)return;run={condition:c,keyboard:c==="A"?E.keyboardA:E.keyboardB,started_at:new Date().toISOString(),events:[],completed_prompts:[],printable:0,correct:0,errors:0,adjacentErrors:0,duplicateErrors:0};pi=0;load();active=true;startPerf=performance.now();$("startBtn").disabled=true;$("abortBtn").disabled=false;$("status").textContent=`計測中: ${run.keyboard}`;$("practice").focus();timer=setInterval(tick,50);tick()}
 function load(){const p=E.sequence[pi%E.sequence.length];toks=tokenize(p.kana);states=[bd(0)];typed="";renderPrompt()}
 function renderPrompt(){const p=E.sequence[pi%E.sequence.length];$("jp").textContent=p.display;$("kana").textContent=`よみ: ${p.kana}`;$("canonical").textContent=canon(toks);$("typed").textContent=typed;$("nextKeys").innerHTML=[...exp(states,toks)].sort().map(c=>`<span class="badge">${c}</span>`).join("")}
