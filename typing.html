@@ -1,6 +1,42 @@
 <!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Typing Error Logger v3</title><style>
 :root{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color-scheme:light dark}body{max-width:1050px;margin:24px auto;padding:0 16px 60px}.card{border:1px solid #8886;border-radius:12px;padding:16px;margin:14px 0}.controls{display:flex;gap:10px;flex-wrap:wrap;align-items:end}label{display:flex;flex-direction:column;gap:4px}select,input,button{padding:8px}button{cursor:pointer}.muted{opacity:.7}#practice{outline:none}#jp{font-size:28px;font-weight:700}#kana{font-size:18px}.mono{font-family:ui-monospace,Consolas,monospace;font-size:22px}.badge{display:inline-block;border:1px solid #8887;border-radius:999px;padding:2px 8px;margin:2px}.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px}.stat{border:1px solid #8885;border-radius:8px;padding:10px}.big{font-size:1.25rem;font-weight:700}table{width:100%;border-collapse:collapse}td,th{padding:7px;border-bottom:1px solid #8885;text-align:left}.flash{animation:f .18s}@keyframes f{from{background:#f006}to{background:transparent}}
-</style></head><body>
+</style>
+<style id="typing-lab-global-nav-style">
+.typing-lab-nav{
+  max-width:1180px;
+  margin:0 auto 18px;
+  padding:10px 12px;
+  border:1px solid #8885;
+  border-radius:12px;
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  align-items:center;
+  background:#8881;
+}
+.typing-lab-nav a,
+.typing-lab-nav span{
+  display:inline-block;
+  padding:6px 10px;
+  border-radius:8px;
+  text-decoration:none;
+  color:inherit;
+}
+.typing-lab-nav a{border:1px solid #8884}
+.typing-lab-nav a:hover{background:#8882}
+.typing-lab-nav .home{font-weight:750}
+.typing-lab-nav .current{opacity:.6;border:1px dashed #8885}
+</style>
+
+</head><body>
+
+<nav class="typing-lab-nav" aria-label="Typing Lab navigation">
+  <a class="home" href="./index.html">← Typing Lab ホーム</a>
+  <span class="current">通常タイピング</span>
+  <a href="./keyboard-ab-test.html">A/B比較</a>
+  <a href="./hid-test.html">HIDテスト</a>
+</nav>
+
 <h1>Typing Error Logger v3</h1><p class="muted">複数ローマ字入力対応・大量問題プール・ランダム抽選・打鍵ログ保存</p>
 <div class="card"><h2>1. 出題設定</h2><div class="controls"><label>カテゴリ<select id="cat"></select></label><label>出題数<input id="count" type="number" min="1" value="50"></label><button id="start">指定数をランダム出題</button><span id="pool" class="muted"></span></div></div>
 <div class="card" id="practice" tabindex="0"><h2>2. タイピング</h2><div id="jp">開始ボタンを押してください</div><div id="kana"></div><div class="muted">代表表記</div><div id="canonical" class="mono"></div><div class="muted">入力</div><div id="typed" class="mono"></div><div>現在のかな: <span id="tok" class="badge">—</span></div><div>許容ローマ字: <span id="vars">—</span></div><div>次のキー: <span id="next">—</span></div></div>

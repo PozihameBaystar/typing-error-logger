@@ -8,8 +8,44 @@
 :root{font-family:system-ui,-apple-system,"Segoe UI","Noto Sans JP",sans-serif;color-scheme:light dark}
 body{max-width:1200px;margin:24px auto;padding:0 18px 70px}h1{margin-bottom:.2rem}.muted{opacity:.72}.card{border:1px solid #8886;border-radius:12px;padding:16px;margin:14px 0}.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}button,input{padding:8px 11px}button{cursor:pointer}button:disabled{opacity:.5;cursor:not-allowed}.ok{color:#2a9d4b;font-weight:700}.bad{color:#d44;font-weight:700}.warn{color:#d88b1c;font-weight:700}code,pre,.mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}pre{white-space:pre-wrap;word-break:break-word;background:#7771;border-radius:8px;padding:12px;max-height:320px;overflow:auto}table{border-collapse:collapse;width:100%;font-size:.94rem}th,td{border-bottom:1px solid #8884;padding:6px 8px;text-align:left}.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px}.stat{border:1px solid #8884;border-radius:8px;padding:10px}.big{font-size:1.3rem;font-weight:700}#rawLog{height:300px;overflow:auto;border:1px solid #8884;border-radius:8px;padding:8px;background:#7771}.logline{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.86rem;white-space:pre-wrap}.hid{color:#69c}.key{color:#c96}.marker{color:#b6c}.small{font-size:.9rem}
 </style>
+
+<style id="typing-lab-global-nav-style">
+.typing-lab-nav{
+  max-width:1180px;
+  margin:0 auto 18px;
+  padding:10px 12px;
+  border:1px solid #8885;
+  border-radius:12px;
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  align-items:center;
+  background:#8881;
+}
+.typing-lab-nav a,
+.typing-lab-nav span{
+  display:inline-block;
+  padding:6px 10px;
+  border-radius:8px;
+  text-decoration:none;
+  color:inherit;
+}
+.typing-lab-nav a{border:1px solid #8884}
+.typing-lab-nav a:hover{background:#8882}
+.typing-lab-nav .home{font-weight:750}
+.typing-lab-nav .current{opacity:.6;border:1px dashed #8885}
+</style>
+
 </head>
 <body>
+
+<nav class="typing-lab-nav" aria-label="Typing Lab navigation">
+  <a class="home" href="./index.html">← Typing Lab ホーム</a>
+  <a href="./typing.html">通常タイピング</a>
+  <a href="./keyboard-ab-test.html">A/B比較</a>
+  <span class="current">HIDテスト</span>
+</nav>
+
 <h1>HID Key Depth Probe</h1>
 <p class="muted">WebHIDの生入力レポートと通常のkeydown/keyupを同一時刻軸で記録します。磁気式キーボードがストローク量をPCへ送っていれば、押し込みに応じて変化するバイトを特定できる可能性があります。</p>
 

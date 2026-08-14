@@ -23,8 +23,44 @@ input,select,button{padding:8px 10px;font:inherit}button{cursor:pointer}button:d
 table{border-collapse:collapse;width:100%}th,td{border-bottom:1px solid #8884;padding:7px 8px;text-align:left}
 .small{font-size:.9rem}
 </style>
+
+<style id="typing-lab-global-nav-style">
+.typing-lab-nav{
+  max-width:1180px;
+  margin:0 auto 18px;
+  padding:10px 12px;
+  border:1px solid #8885;
+  border-radius:12px;
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  align-items:center;
+  background:#8881;
+}
+.typing-lab-nav a,
+.typing-lab-nav span{
+  display:inline-block;
+  padding:6px 10px;
+  border-radius:8px;
+  text-decoration:none;
+  color:inherit;
+}
+.typing-lab-nav a{border:1px solid #8884}
+.typing-lab-nav a:hover{background:#8882}
+.typing-lab-nav .home{font-weight:750}
+.typing-lab-nav .current{opacity:.6;border:1px dashed #8885}
+</style>
+
 </head>
 <body>
+
+<nav class="typing-lab-nav" aria-label="Typing Lab navigation">
+  <a class="home" href="./index.html">← Typing Lab ホーム</a>
+  <a href="./typing.html">通常タイピング</a>
+  <span class="current">A/B比較</span>
+  <a href="./hid-test.html">HIDテスト</a>
+</nav>
+
 <h1>Keyboard A/B Typing Experiment</h1>
 <p class="muted">同じ問題順・同じ制限時間で2台のキーボードを比較します。日本語IMEはOFFにしてください。</p>
 
